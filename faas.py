@@ -199,7 +199,6 @@ class FactorioCommands:
         sub = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         _, _ = sub.communicate()
 
-
     def create_service(self):
         check_root_permission()
         self.vprint('You have root permissions')
