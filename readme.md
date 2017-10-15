@@ -74,7 +74,32 @@ $ sudo systemctl stop factorio
 
 #### 4 Automatic updates with cron
 
-*Documentation TODO*
+The script has been specially designed to be easily usable with crontab. Once you are sure everyting is OOK (service is up and running),
+you can create new cron to automate the update.
+
+Use this command to open the list of crontab (warning, execute it as the right user):
+
+```bash
+crontab -e
+```
+
+If you want to (checking) update every night, you can do add this line:
+
+```bash
+30 6 * * *   /path/to/faas.py -u
+```
+
+If you want it every hours with logs:
+
+```bash
+0 * * * *   /path/to/faas.py -u >> /path/to/logs.txt 2>&1
+```
+
+Validate and you're done.
+
+> The execution of the cron will not stop your server if there is no update.
+> If an update is applied, the server will be stopped during the installation and directly restarted after. 
+
 
 ## FAQ
 
@@ -97,6 +122,13 @@ the serve once the update is complete.
 Hey, that's not a question! Most likely, it's a file permission problem. Be sure the user configured to be owner of the process 
 has the right to write and execute files in factorio directory.
 
+In order to avoid permission issues, I advice you to create a `factorio` user (whatever the name) that will:
+* Own the game directory
+* Own `factorio_as_a_service` directory
+* Be responsible of the crontab
+* Be the owner of the server process (field `user` in `config.ini`)
+* Always execute `faas.py` with this user (except when using -c flag since it required root)
+
 
 #### Are my saved game safe ?
 Normally yes. Updates should not delete your saved games. But it's always safer to have backups.
@@ -104,4 +136,11 @@ Normally yes. Updates should not delete your saved games. But it's always safer 
 #### Can I revert to a previous version ?
 Not yet. You can do it manually and still run the service creation command though.
 
+#### I used to specify the port as a parameter. It's not possible anymore. How do I do ?
+Indeed, you must now specify parameters (such as the port) in the file `(Game directory)/config/config.ini`
 
+
+#### I have multiple factorio servers running on my server. Can I still do that ?
+
+Yes, but you'll need 2 different game install and 2 times factorio_as_a_service (one for each installed game).
+You must also change the`service-name` for at least one of the faas.py in its `config.ini` file
