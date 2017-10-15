@@ -1,0 +1,10 @@
+.idea/
+*.py[cod]
+__pycache__/
+*$py.class
+*.so
+build/
+dist/
+lib/
+lib64/
+*.*~
