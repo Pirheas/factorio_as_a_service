@@ -78,30 +78,30 @@ $ sudo systemctl stop factorio
 
 ## FAQ
 
-##### What does this tool exactly ?
+#### What does this tool exactly ?
 Basically, it has two goals: updating the server and create a systemd service to launch the server process.
 
 The update server command can easily be configured with a cron. This way, it can be updated automatically.
 
-##### Other tools already exist, why create a new one ?
+#### Other tools already exist, why create a new one ?
 None allow to both update and configure the server as a (systemd) service.
 Plus this tool **automate a lot of things** and require a **minimum configuration** (3 fields only).
 Last but no least, with the verbose option, the problems are really well explained and it's easy to find
 what's wrong in case of failure
 
-##### Do I need to stop the server before starting the update command ?
+#### Do I need to stop the server before starting the update command ?
 No, the update command will stop the server itself only if a new version is available. It will also restart 
 the serve once the update is complete.
 
-##### It doesn't work
+#### It doesn't work
 Hey, that's not a question! Most likely, it's a file permission problem. Be sure the user configured to be owner of the process 
 has the right to write and execute files in factorio directory.
 
 
-##### Are my saved game safe ?
+#### Are my saved game safe ?
 Normally yes. Updates should not delete your saved games. But it's always safer to have backups.
 
-##### Can I revert to a previous version ?
+#### Can I revert to a previous version ?
 Not yet. You can do it manually and still run the service creation command though.
 
 
