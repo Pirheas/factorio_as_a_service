@@ -1,20 +1,28 @@
 # Factorio As A Service
 
-Python script that allows to create a Factorio service on systemd.
-It also allows to (auto)update the game to the latest version.
-With a cron you can even automate this task.
+This python script has 2 major purposes: create easily a systemd service for factorio on Linux and 
+updating the game automatically.
 
 ## Requirements
 
 * Linux supporting systemd
+* Sudo installed
 * python >= 3.4
+* git
+
+## How to download it ?
+Go to the desired directory for the installation and use this command:
+```bash
+git clone https://github.com/Pirheas/factorio_as_a_service.git
+```
 
 ## How to use it ?
 
-First, use this command to show help:
+First, I recommand to create a new user who will own both this script and the whole game directory.
+
 Use the `-v` flag for verbose. It may be useful for debugging
 
-
+Type this command for help:
 ```bash
 $ python3 ./faas.py -h
 ```
@@ -127,7 +135,7 @@ In order to avoid permission issues, I advice you to create a `factorio` user (w
 * Own `factorio_as_a_service` directory
 * Be responsible of the crontab
 * Be the owner of the server process (field `user` in `config.ini`)
-* Always execute `faas.py` with this user (except when using -c flag since it required root)
+* Always execute `faas.py` with this user (except when using -c flag since it requires root)
 
 
 #### Are my saved game safe ?

@@ -13,6 +13,7 @@ from configparser import ConfigParser
 
 
 SYSTEMD_PATH = '/etc/systemd/system'
+SUDOER_PATH = '/etc/sudoers.d'
 
 
 def main():
@@ -22,7 +23,7 @@ def main():
         fc.get_latest_version()
     elif vargs.update:
         fc.update_server()
-    elif vargs.factorio_version:
+    elif vargs.installed_version:
         fc.get_local_version()
     elif vargs.create_service:
         fc.create_service()
@@ -34,7 +35,7 @@ def init_args_parse():
     group.add_argument('-c', '--create-service', help='Configure Factorio as a systemd service (need root permissions)',
                        action='store_true')
     group.add_argument('-u', '--update', help='Update factorio if needed', action='store_true')
-    group.add_argument('-f', '--factorio-version', help='Get the version of factorio installed on this server',
+    group.add_argument('-i', '--installed-version', help='Get the version of factorio installed on this server',
                        action='store_true')
     group.add_argument('-l', '--latest-version', help='Get the latest version of factorio', action='store_true')
     parser.add_argument('-x', '--experimental', help='Force using the experimental version', action='store_true')
@@ -42,101 +43,223 @@ def init_args_parse():
     return parser.parse_args()
 
 
+class ConfigData:
+    def __init__(self, config, command_args):
+        self.config = config
+        self.command_args = command_args
+        self._verbose = None
+        self._baseurl = None
+        self._experimental = None
+        self._factorio_path = None
+        self._experimental_url = None
+        self._stable_url = None
+        self._factorio_binary = None
+        self._factorio_service = None
+        self._factorio_service_path = None
+        self._save_path = None
+        self._user = None
+
+    def vprint(self, *args, **kwargs):
+        if self.verbose:
+            print(*args, **kwargs)
+
+    @property
+    def verbose(self):
+        if self._verbose is None:
+            self._verbose = self.command_args.verbose
+            self.vprint("** Verbose mode enabled **")
+        return self._verbose
+
+    @property
+    def experimental(self):
+        if self._experimental is None:
+            self._experimental = self.config.getboolean('DEFAULT', 'experimental', fallback=False)
+            self._experimental = self._experimental or self.command_args.experimental
+            if self.experimental:
+                self.vprint("Looking for Experimental version")
+            else:
+                self.vprint("Looking for stable version")
+        return self._experimental
+
+    @property
+    def baseurl(self):
+        if self._baseurl is None:
+            self._baseurl = self.config.get('WEBSITE', 'baseurl', fallback='https://www.factorio.com')
+        return self._baseurl
+
+    @property
+    def experimental_url(self):
+        if self._experimental_url is None:
+            page = self.config.get('WEBSITE', 'experimentalpage', fallback='/download-headless/experimental')
+            self._experimental_url = '{0}{1}'.format(self.baseurl, page)
+            self.vprint('Downloading page:', self._experimental_url)
+        return self._experimental_url
+
+    @property
+    def stable_url(self):
+        if self._stable_url is None:
+            page = self.config.get('WEBSITE', 'stablepage', fallback='/download-headless/stable')
+            self._stable_url = '{0}{1}'.format(self.baseurl, page)
+            self.vprint('Downloading page:', self._stable_url)
+        return self._stable_url
+
+    @property
+    def factorio_path(self):
+        if self._factorio_path is None:
+            path = self.config.get('DEFAULT', 'factorio-path', fallback='/factorio')
+            self._factorio_path = get_abs_path(path)
+        return self._factorio_path
+
+    @property
+    def factorio_binary(self):
+        if self._factorio_binary is None:
+            self._factorio_binary = os.path.join(self.factorio_path,
+                                                 self.config.get('DEFAULT', 'bin-path', fallback='bin/x64/factorio'))
+            self.vprint('Checking factorio binary at', self._factorio_binary)
+        return self._factorio_binary
+
+    @property
+    def factorio_service(self):
+        if self._factorio_service is None:
+            self._factorio_service = self.config.get('SERVICE', 'service-name', fallback='factorio.service')
+            self.vprint("Service name found:", self._factorio_service)
+            if not str(self._factorio_service).endswith('.service'):
+                print('Your service name must end with: ".service"', file=sys.stderr)
+                sys.exit(-100)
+        return self._factorio_service
+
+    @property
+    def factorio_service_path(self):
+        return os.path.join(SYSTEMD_PATH, self.factorio_service)
+
+    @property
+    def factorio_service_rule_path(self):
+        if self._factorio_service_path is None:
+            filename = re.sub(r'\W', '_', self.factorio_service)
+            filename = '99_{0}'.format(filename)
+            self._factorio_service_path = os.path.join(SUDOER_PATH, filename)
+            self.vprint("Writing permission at", self._factorio_service_path)
+        return self._factorio_service_path
+
+    @property
+    def save_path(self):
+        if self._save_path is None:
+            self._save_path = get_abs_path(self.config.get('DEFAULT', 'save-path',
+                                                           fallback='../factorio/save/fsave.zip'))
+            self.vprint('Save path configured at', self._save_path)
+        return self._save_path
+
+    @property
+    def user(self):
+        if self._user is None:
+            self._user = self.config.get('DEFAULT', 'user', fallback='root')
+        return self._user
+
+
 class FactorioCommands:
     def __init__(self, vargs):
         self.vargs = vargs
-        self.config = ConfigParser()
+        config = ConfigParser()
         config_path = get_abs_path('./config.ini')
         if vargs.verbose:
             print('Reading config from "{0}"'.format(config_path))
-        self.config.read(config_path)
-        self.experimental = self.config.getboolean('DEFAULT', 'experimental', fallback=False) or self.vargs.experimental
-        self.baseurl = self.config.get('WEBSITE', 'baseurl', fallback='https://www.factorio.com')
-        self.service_name = self.config.get('SERVICE', 'service-name', fallback='factorio.service')
-        self.save_path = get_abs_path(self.config.get('DEFAULT', 'save-path', fallback='../factorio/save/fsave.zip'))
-        self.dir_path = None
-        self.bin_path = None
-        self.bin_exists = False
-        self.settings_path = None
+        config.read(config_path)
+        self.config = ConfigData(config, self.vargs)
         self.latest_version_data = None
 
     def vprint(self, *args, **kwargs):
-        if self.vargs.verbose:
-            print(*args, **kwargs)
+        self.config.vprint(*args, **kwargs)
 
-    def get_dir_path(self):
-        if self.dir_path:
-            return self.dir_path
-        path = self.config.get('DEFAULT', 'factorio-path', fallback='/factorio')
-        self.dir_path = get_abs_path(path)
-        self.vprint('Factorio directory path:', self.dir_path)
-        self.bin_path = os.path.join(self.dir_path, self.config.get('DEFAULT', 'bin-path', fallback='bin/x64/factorio'))
-        self.vprint('Factorio binary path:', self.bin_path)
-        return self.dir_path
-
-    def check_dir_path(self, create_dir=True):
-        path = self.get_dir_path()
+    def check_factorio_path(self, create_dir=True):
+        path = self.config.factorio_path
         if os.path.exists(path):
             if os.path.isdir(path):
-                if os.path.isfile(self.bin_path):
-                    if not os.access(self.bin_path, os.X_OK):
-                        self.vprint('Not allowed to execute binary, tying to chmod file')
-                        os.chmod(self.bin_path, 0o755)
-                    self.bin_exists = True
-                else:
-                    self.vprint(self.bin_path, 'is not a file')
+                return True
             else:
-                print('Path', path, 'already exists and is not a directory', file=sys.stderr)
+                self.vprint("{0} is not a directory".format(path))
+                return False
+        elif create_dir is True:
+            try:
+                os.makedirs(self.config.factorio_path)
+                return True
+            except:
+                print('Unable to create directory', self.config.factorio_path, file=sys.stderr)
                 sys.exit(-1)
-        elif create_dir:
-            self.vprint('Directory does not exist')
-            os.makedirs(path)
-            self.vprint('Directory created:', path)
+        else:
+            self.vprint('Directory "{0}" does not exist'.format(path))
         return False
 
-    def _get_latest_version(self):
-        if self.experimental:
-            page = self.config.get('WEBSITE', 'experimentalpage', fallback='/download-headless/experimental')
-        else:
-            page = self.config.get('WEBSITE', 'stablepage', fallback='/download-headless/stable')
+    def check_factorio_bin_path(self):
+        path = self.config.factorio_binary
+        if not os.path.isfile(path):
+            self.vprint("{0} does not exist or is not a file".format(path))
+            return False
+        if not os.access(path, os.X_OK):
+            self.vprint("Current user does not have execution permission on file", path)
+            return False
+        return True
 
-        url = '{0}{1}'.format(self.baseurl, page)
-        self.vprint('Downloading page:', url)
+    def _get_latest_version(self):
+        success = False
+        parser = None
+        if self.config.experimental:
+            parser, success = self._download_and_parse_page(self.config.experimental_url)
+        if not success:
+            if self.config.experimental:
+                self.vprint('Unable to find any experimental version, fallback to stable branch')
+            parser, success = self._download_and_parse_page(self.config.stable_url)
+        if not success:
+            print("Unable to find any factorio version a their website !", file=sys.stderr)
+            sys.exit(-5)
+        self.latest_version_data = parser.latest_version
+        return parser
+
+    def _download_and_parse_page(self, url):
         parser = FactorioVersionPageParser()
         try:
             with urlopen(url) as fs:
                 parser.feed(fs.read().decode())
+            if parser.version_found:
+                return parser, True
+            else:
+                self.vprint("No version found on this page !")
         except HTTPError as httperr:
-            print('Unable to open "{0}":'.format(url), file=sys.stderr)
-            print('Code {0}: {1}'.format(httperr.code, httperr.msg), file=sys.stderr)
-            sys.exit(-1)
-        self.latest_version_data = parser.latest_version
-        return parser
+            self.vprint('Unable to open "{0}":'.format(url))
+            self.vprint('Code {0}: {1}'.format(httperr.code, httperr.msg))
+        except Exception as err:
+            self.vprint("Error:", str(err))
+        return None, False
 
     def get_latest_version(self):
         ret = self._get_latest_version()
-        if self.vargs.verbose:
+        if self.config.verbose:
             print(str(ret))
         else:
             print(ret.latest_version.number)
 
     def _get_local_version(self):
-        self.check_dir_path()
-        if not self.bin_exists:
-            print('File', '"{0}"'.format(self.bin_path), 'does not exist or is not executable')
-            sys.exit(-3)
+
+        if not self.check_factorio_path(False):
+            print('Unable to find factorio directory at', self.config.factorio_path, file=sys.stderr)
+            sys.exit(-10)
+        if not self.check_factorio_bin_path():
+            print('Unable to execute factorio at', self.config.factorio_binary, file=sys.stderr)
+            sys.exit(-11)
         try:
-            return str_to_version(subprocess.check_output([self.bin_path, '--version'], universal_newlines=True))
+            return str_to_version(subprocess.check_output([self.config.factorio_binary, '--version'],
+                                                          universal_newlines=True))
         except subprocess.CalledProcessError:
             self.vprint('Unable to find local version')
         return None
 
     def get_local_version(self):
         version = self._get_local_version()
-        print('Version of', self.bin_path, ':', version.vstring)
+        print('Version of', self.config.factorio_binary, ':', version.vstring)
 
     def update_server(self):
-        self.check_dir_path()
+        if not self.check_factorio_path(True):
+            print("Unable to create directory at:", self.config.factorio_path, file=sys.stderr)
+            sys.exit(-8)
         if self.is_download_needed():
             self.stop_server()
             self.download_extract_archive()
@@ -147,7 +270,7 @@ class FactorioCommands:
 
     def is_download_needed(self):
         latest = self._get_latest_version().latest_version
-        if not self.bin_exists:
+        if not self.check_factorio_bin_path():
             self.vprint('No binary found, update required')
             return True
         local_version = self._get_local_version()
@@ -162,15 +285,15 @@ class FactorioCommands:
         return False
 
     def download_extract_archive(self):
-        url = '{0}{1}'.format(self.baseurl, self.latest_version_data.path)
+        url = '{0}{1}'.format(self.config.baseurl, self.latest_version_data.path)
         self.vprint('Downloading file:', url)
         path = '/tmp/factorio_headless.tar.xz'
         with urlopen(url) as fs:
             with open(path, 'wb') as f:
                 self.vprint('Creation of the archive at:', path)
                 f.write(fs.read())
-        tar = ['tar', '-xf', path, '-C', self.dir_path, '--strip-components=1']
-        self.vprint("Extracting data to", self.dir_path)
+        tar = ['tar', '-xf', path, '-C', self.config.factorio_path, '--strip-components=1']
+        self.vprint("Extracting data to", self.config.factorio_path)
         sub = subprocess.Popen(tar, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         stdout, stderr = sub.communicate()
         if sub.returncode == 0:
@@ -182,20 +305,22 @@ class FactorioCommands:
             sys.exit(-2)
 
     def stop_server(self):
-        self.vprint('Stoping service...')
         if not self._service_file_exists():
             self.vprint('Service is not configured yet (unable to start it)')
             return
-        command = ['sudo', '/bin/systemctl', 'stop', 'factorio.service']
+        else:
+            self.vprint('Stoping service...')
+        command = ['sudo', '/bin/systemctl', 'stop', self.config.factorio_service]
         sub = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         _, _ = sub.communicate()
 
     def start_server(self):
-        self.vprint('Starting service...')
         if not self._service_file_exists():
             self.vprint('Service is not configured yet (unable to start it)')
             return
-        command = ['sudo', '/bin/systemctl', 'start', 'factorio.service']
+        else:
+            self.vprint('Starting service...')
+        command = ['sudo', '/bin/systemctl', 'start', self.config.factorio_service]
         sub = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         _, _ = sub.communicate()
 
@@ -203,13 +328,11 @@ class FactorioCommands:
         check_root_permission()
         self.vprint('You have root permissions')
         check_systemd_dir()
-        self.check_dir_path(create_dir=False)
-        if not self.bin_exists:
-            print('Unable to find binary file at:', self.bin_path, file=sys.stderr)
-            sys.exit(-8)
-        if not os.path.isfile(self.save_path):
-            print('Unable to find save file at:', self.save_path, file=sys.stderr)
-            sys.exit(-15)
+        check_sudoer_dir()
+        if not self.check_factorio_path(create_dir=False) or not self.check_factorio_bin_path():
+            print("Unable to create service, file {0} does not exist or is not executable"
+                  .format(self.config.factorio_binary, file=sys.stderr))
+            sys.exit(-9)
         self.stop_server()
         self._write_service()
         self._manage_service_permissions()
@@ -218,10 +341,10 @@ class FactorioCommands:
         self.start_server()
 
     def _manage_service_permissions(self):
-        rules = ['ALL ALL=(ALL) NOPASSWD: /bin/systemctl start {0}'.format(self.service_name),
-                 'ALL ALL=(ALL) NOPASSWD: /bin/systemctl status {0}'.format(self.service_name),
-                 'ALL ALL=(ALL) NOPASSWD: /bin/systemctl stop {0}'.format(self.service_name)]
-        rule_path = '/etc/sudoers.d/99_factorio'
+        rules = ['ALL ALL=(ALL) NOPASSWD: /bin/systemctl start {0}'.format(self.config.factorio_service),
+                 'ALL ALL=(ALL) NOPASSWD: /bin/systemctl status {0}'.format(self.config.factorio_service),
+                 'ALL ALL=(ALL) NOPASSWD: /bin/systemctl stop {0}'.format(self.config.factorio_service)]
+        rule_path = self.config.factorio_service_rule_path
         with open(rule_path, 'w') as f:
             self.vprint('Adding rules in sudoers to allow all users to use service at:', rule_path)
             f.write('\n'.join(rules))
@@ -240,13 +363,17 @@ class FactorioCommands:
             print("Please consider running 'systemctl daemon-reload' to reload units", file=sys.stderr)
 
     def _service_file_exists(self):
-        service = os.path.join(SYSTEMD_PATH, self.service_name)
+        service = self.config.factorio_service_path
         return os.path.isfile(service)
 
     def _write_service(self):
-        path = os.path.join(SYSTEMD_PATH, self.service_name)
-        user = self.config.get('DEFAULT', 'user', fallback='root')
+        path = self.config.factorio_service_path
+        user = self.config.user
         check_user_exists(user)
+        if not os.path.isfile(self.config.save_path):
+            print("Save file at '{0}' does not exist or is not a file".format(self.config.save_path), file=sys.stderr)
+            sys.exit(-21)
+        self.vprint("Save file located at", self.config.save_path)
         settings_path = self.get_server_settings_path()
         settings_command = ''
         if settings_path:
@@ -261,16 +388,17 @@ Type=simple
 User={0}
 WorkingDirectory={1}
 ExecStart={2} --start-server {3}{4}
-        '''.format(user, self.dir_path, self.bin_path, self.save_path, settings_command)
+        '''.format(user, self.config.factorio_path, self.config.factorio_binary,
+                   self.config.save_path, settings_command)
         with open(path, 'w') as f:
             self.vprint('Creating service file at:', path)
             f.write(service)
 
     def get_server_settings_path(self):
-        if not self.config.getboolean('DEFAULT', 'custom-settings-path', fallback=False):
+        if not self.config.config.getboolean('DEFAULT', 'custom-settings-path', fallback=False):
             self.vprint('No settings file specified')
             return None
-        path = get_abs_path(self.config.get('DEFAULT', 'settings-path', fallback=''))
+        path = get_abs_path(self.config.config.get('DEFAULT', 'settings-path', fallback=''))
         if not os.path.isfile(path):
             print('Unable to find settings file at:', path, file=sys.stderr)
             sys.exit(-16)
@@ -307,7 +435,13 @@ def check_root_permission(required=True):
 def check_systemd_dir():
     if not os.path.isdir(SYSTEMD_PATH):
         print("Your system seems not compatible with systemd. Impossible to create service", file=sys.stderr)
-        sys.exit(14)
+        sys.exit(19)
+
+
+def check_sudoer_dir():
+    if not os.path.isdir(SUDOER_PATH):
+        print("Your system does not support sudo. Impossible to create service", file=sys.stderr)
+        sys.exit(18)
 
 
 def check_user_exists(username):
@@ -377,6 +511,10 @@ class FactorioVersionPageParser(HTMLParser):
         if not self.available_version:
             return None
         return self.available_version[0]
+
+    @property
+    def version_found(self):
+        return len(self.available_version) > 0
 
 
 if __name__ == "__main__":
