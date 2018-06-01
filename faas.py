@@ -39,6 +39,7 @@ def init_args_parse():
                        action='store_true')
     group.add_argument('-l', '--latest-version', help='Get the latest version of factorio', action='store_true')
     parser.add_argument('-x', '--experimental', help='Force using the experimental version', action='store_true')
+    parser.add_argument('-C', '--config-file', help='Config file path', default='/etc/faas/config.ini')
     parser.add_argument('-v', '--verbose', help='Verbose', action='store_true')
     return parser.parse_args()
 
@@ -98,7 +99,7 @@ class ConfigData:
     @property
     def stable_url(self):
         if self._stable_url is None:
-            page = self.config.get('WEBSITE', 'stablepage', fallback='/download-headless/stable')
+            page = self.config.get('WEBSITE', 'stablepage', fallback='/download-headless')
             self._stable_url = '{0}{1}'.format(self.baseurl, page)
             self.vprint('Downloading page:', self._stable_url)
         return self._stable_url
@@ -160,7 +161,7 @@ class FactorioCommands:
     def __init__(self, vargs):
         self.vargs = vargs
         config = ConfigParser()
-        config_path = get_abs_path('./config.ini')
+        config_path = get_abs_path(self.vargs.config_file)
         if vargs.verbose:
             print('Reading config from "{0}"'.format(config_path))
         config.read(config_path)
