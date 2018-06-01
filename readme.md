@@ -18,7 +18,7 @@ git clone https://github.com/Pirheas/factorio_as_a_service.git
 
 ## How to use it ?
 
-First, I recommand to create a new user who will own both this script and the whole game directory.
+First, I recommend to create a new user who will own both this script and the whole game directory.
 
 Use the `-v` flag for verbose. It may be useful for debugging
 
@@ -37,6 +37,12 @@ You will have to configure at least these fields:
 * __factorio-path__ : Path of the factorio directory (it should contains a `bin` and a `data` directory)
 * __save-path__ : Path of the saved game (zip file). If you don't have created it yet, consider reading [this tuto](https://wiki.factorio.com/Multiplayer#Dedicated.2FHeadless_server)
 * __user__ : The user who will execute the factorio server (choose an existing linux user, `root` is a bad idea but will works)
+
+By default the script will be looking for the file in: `/etc/faas/config.ini`. You need to create this folder manually:
+```bash
+mkdir /etc/faas
+cp ./config.ini /etc/faas/config.ini
+```
 
 > NB: When you are using a relative path, the working directory will always be the directory that contains `faas.py`. Please consider using absolute path
 
