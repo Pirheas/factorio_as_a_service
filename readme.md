@@ -43,6 +43,10 @@ By default the script will be looking for the file in: `/etc/faas/config.ini`. Y
 mkdir /etc/faas
 cp ./config.ini /etc/faas/config.ini
 ```
+Alternatively, you can run the command using the `-C` parameter:
+```bash
+./faas.py -C ./config.ini -h
+```
 
 > NB: When you are using a relative path, the working directory will always be the directory that contains `faas.py`. Please consider using absolute path
 
