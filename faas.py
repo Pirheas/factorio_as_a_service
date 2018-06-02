@@ -158,10 +158,18 @@ class ConfigData:
 
 
 class FactorioCommands:
+
     def __init__(self, vargs):
         self.vargs = vargs
         config = ConfigParser()
         config_path = get_abs_path(self.vargs.config_file)
+        if not os.path.isfile(config_path) and config_path.lower() != './config.ini':
+            config_path = get_abs_path('./config.ini')
+        if not os.path.isfile(config_path):
+            print('Unable to find the config file at: ', file=sys.stderr)
+            print('\t"{0}" or'.format(get_abs_path(self.vargs.config_file)), file=sys.stderr)
+            print('\t"{0}"'.format(get_abs_path('./config.ini')), file=sys.stderr)
+            sys.exit(-30)
         if vargs.verbose:
             print('Reading config from "{0}"'.format(config_path))
         config.read(config_path)

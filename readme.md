@@ -40,12 +40,13 @@ You will have to configure at least these fields:
 
 By default the script will be looking for the file in: `/etc/faas/config.ini`. You need to create this folder manually:
 ```bash
-mkdir /etc/faas
+sudo mkdir /etc/faas
 cp ./config.ini /etc/faas/config.ini
 ```
-Alternatively, you can run the command using the `-C` parameter:
+If there is no file at `/etc/faas/config.ini` it will try to use the config file in the same directory `./config.ini`
+Alternatively, you can run the command using the `-C` parameter to specify yourself the path of the config file:
 ```bash
-./faas.py -C ./config.ini -h
+python3 ./faas.py -C /home/me/myfaasconfig/config.ini -i
 ```
 
 > NB: When you are using a relative path, the working directory will always be the directory that contains `faas.py`. Please consider using absolute path
@@ -147,6 +148,9 @@ In order to avoid permission issues, I advice you to create a `factorio` user (w
 * Be the owner of the server process (field `user` in `config.ini`)
 * Always execute `faas.py` with this user (except when using -c flag since it requires root)
 
+#### While extracting data during an update, I encounter an 'Operation not permitted'. What's the problem ?
+Once again, it's a permission problem. Be sure to have the write permission on all factorio files. If not, use a `chmod -R`
+to be sure the desired user is the owner of factorio directory.  
 
 #### Are my saved game safe ?
 Normally yes. Updates should not delete your saved games. But it's always safer to have backups.
